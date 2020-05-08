@@ -1,0 +1,184 @@
+---
+title: '`tidyr` Tutorial'
+author: "Shih Ching Fu"
+date: "May 2020"
+output:
+  html_document:
+    df: paged 
+    toc: true
+    toc_depth: 3
+    toc_float: 
+      collapsed: true
+      smooth_scroll: true
+    number_sections: true
+    theme: readable
+    highlight: haddock
+    code_folding: show
+knit: 
+  (function(input_file, encoding) {
+    rmarkdown::render(input_file,
+                      encoding=encoding,
+                      output_file=file.path(dirname(input_file), 'docs', 'index.html'))})
+---
+
+This is a short tutorial outline the syntax for using the basic tidying functions of the `tidyr` package, namely:
+
+- `pivot_longer()`,
+- `pivot_wider()`,
+- `separate()`, and
+- `unite()`.
+
+First we load the needed packages, in particular `tidyr`.
+
+```{r message=FALSE, warning=FALSE}
+library(tidyr)
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(lubridate)
+```
+
+# COVID-19 cases time-series
+
+The example dataset used in this tutorial is curated by the [Center for Systems Science and Engineering](https://systems.jhu.edu/) at Johns Hopkins University, Whiting School of Engineering. 
+
+It is time series data updated nightly with the number of COVID-19 cases globally, grouped by various geographical regions.
+
+```{r message=FALSE}
+url_text <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv"
+
+covid19_cases <- read_csv(url(url_text))
+```
+
+For this tutorial we'll only look at Australian numbers.
+
+```{r message=FALSE}
+au_cases <- covid19_cases %>%
+  filter(`Country/Region` == "Australia") %>%
+  select(State = `Province/State`, ends_with("20")) %>%
+  mutate(State = factor(State))
+au_cases
+
+```
+
+Notice that the column headers, aside from the first, are dates in `m/d/yy` format. This is a clue that this data frame is in 'wide' format since the column names themselves contain data about the observations. In this case, the column names refer to the date on which the case count data corresponds.
+
+# Pivoting Longer
+
+Let's reorganise this data frame into 'long' format using the `pivot_longer()` function in `tidyr`.
+
+The `cols =` argument specifies which columns we want to pivot. Here we want all _except_ the `State` column so we've added an exclaimation prefix `!`. The `names_to =` argument indicates the name of the _new_ column for storing what were _previously_ column names. The third argument here is `values_to =` which is the name of another new column for holding the observation values.
+
+```{r}
+au_cases_long <- au_cases %>%
+  pivot_longer(cols = !State,
+               names_to = "Date",
+               values_to = "NumCases")
+au_cases_long
+```
+
+Observe that for each of the 8 rows of 107 columns in the wide data frame has been pivoted into 108 rows of 2 columns in the long data frame. Also notice that by default the new `Date` column is of type `character`.
+
+# Separating
+
+In the `Date` column of the long data frame, observe that it comprises a tuple of integers corresponding to the Month, Day, and Year of the observation. For the purposes of this tutorial suppose that we want to break out each of these date components into its own column. This is achieved using `separate()`.
+
+`cols = ` indicates which column we wish to split, `into =` is a vector of new column names ordered by the components being split out of `cols =`, the separator character is given to `sep =`, and setting `convert =` to `TRUE` instructs R to automatically convert the new columns into an appropriate data type, e.g., integer, double.
+
+```{r}
+au_cases_tidy <- au_cases_long %>%
+  separate(col = Date, 
+           into = c("Month", "Day", "Year"), 
+           sep = "/",
+           convert = TRUE)
+au_cases_tidy
+```
+
+We now have each date component in its own column, stored as integers, and can sort the rows meaningfully.
+
+For example, perhaps we want to plot the number of cases in Australia as observed on the first day of each month. Having tidy data makes the `filter()`ing straightforward.
+
+```{r}
+au_cases_tidy %>%
+  filter(Day == 1) %>%
+  ggplot(aes(x = Month, y = NumCases, colour = State)) +
+    geom_line(size = 2, alpha = 0.5) +
+    ggtitle("Australian COVID-19 cases at month's start in 2020") +
+    ylab("No. of cases") +
+    guides(colour = guide_legend(title = "State/Territory"))
+```
+
+However, rather than expressing months as numerals it would make sense to store them as proper date objects.
+
+# Uniting
+
+Having split the original `Date` column into components, we can reconstitute it back using the `unite()` function but this time in ISO format `YYYY-MM-DD`.
+
+The `col =` argument specifies the name of the newly reconstituted column, the next arguments are the column names being united together in their desired order, and as before the `sep =` indicates what separator character to insert between the components.
+
+We can then pipe `%>%` this into a `mutate()` command that uses the `dmy()` function in `lubridate()` to convert the character strings into true date objects.
+
+```{r}
+au_cases_tidy_date <- au_cases_tidy %>%
+  unite(col = "Date",
+        Day, Month, Year, 
+        sep = "-") %>%
+  mutate(Date = dmy(Date))
+au_cases_tidy_date
+```
+
+Now with proper date objects, the x-axis of our plans are more intuitive.
+
+```{r}
+au_cases_tidy_date %>%
+  ggplot(aes(x = Date, y = NumCases, colour = State)) +
+    geom_line(size = 2, alpha = 0.5) +
+    ggtitle(label = "Australian COVID-19 cases in April 2020", 
+            subtitle = "Note logarithmic scale") +
+    ylab("No. of cases") +
+    guides(colour = guide_legend(title = "State/Territory")) +
+    scale_y_log10()
+```
+
+# Pivoting wider
+
+Finally, we might return to something similar to our original dataset by applying `pivot_wider()`.
+
+The `id_cols =` argument specifies which columns to include in the pivot (in this case all of them), `names_from = ` indicates in which column to get the _new_ column names, and `values_from = ` tells R from which existing column to fill in the new columns
+
+
+```{r}
+au_cases_wide <- au_cases_tidy_date %>%
+  pivot_wider(id_cols = everything(),
+              names_from = Date,
+              values_from = NumCases)
+au_cases_wide
+```
+
+This final data frame is similar to the first data frame except the column names are now dates in ISO format.
+
+# One fell swoop
+
+Using some of the other arguments to `pivot_longer()` we can incorporate the separating of the `Date` column into its three components with using `separate()`.
+
+```{r}
+au_cases %>%
+  pivot_longer(cols = !State,
+               names_to = c("Month", "Day", "Year"),
+               names_sep = "/",
+               names_ptypes = list(Month = integer(), Day = integer(), Year = integer()),
+               values_to = "NumCases",
+               values_ptypes = list(NumCases = integer())) %>%
+  select(State, Day, Month, Year, NumCases)
+
+```
+
+
+
+# Duplication
+
+A final comment on the relative sizes of wide and long data. Sometimes to conform to the 'tidy' principles of data organisation there'll be a lot of duplication of values within a column.
+
+The original wide data frame had `r NROW(au_cases_wide)` $\times$ `r NCOL(au_cases_wide)` = `r NROW(au_cases_wide)* NCOL(au_cases_wide)` entries compared with `r NROW(au_cases_tidy)` $\times$ `r NCOL(au_cases_tidy)` = `r NROW(au_cases_tidy)* NCOL(au_cases_tidy)` entries in the tidied data frame.
+
+
