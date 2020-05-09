@@ -133,7 +133,7 @@ The `col =` argument specifies the name of the newly reconstituted column, the n
 
 We then pipe `%>%` this into a `mutate()` command and use the `dmy()` function in the `lubridate` package to convert the character strings into true date objects.
 
-```{r}
+```{r message=FALSE}
 library(lubridate)
 
 au_cases_tidy_date <- au_cases_tidy %>%
