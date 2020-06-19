@@ -14,6 +14,7 @@ output:
     theme: readable
     highlight: haddock
     code_folding: show
+    code_download: true
 knit: 
   (function(input_file, encoding) {
     rmarkdown::render(input_file,
@@ -184,12 +185,17 @@ au_cases %>%
   pivot_longer(cols = !State,
                names_to = c("Month", "Day", "Year"),
                names_sep = "/",
-               names_ptypes = list(Month = integer(), Day = integer(), Year = integer()),
+               names_transform = list(Month = as.integer, Day = as.integer, Year = as.integer),
                values_to = "NumCases",
-               values_ptypes = list(NumCases = integer())) %>%
+               values_transform = list(NumCases = as.integer)) %>%
   select(State, Day, Month, Year, NumCases)
 
 ```
+
+```{r}
+au_cases
+```
+
 
 # Duplicated entries and non-tidy data
 
